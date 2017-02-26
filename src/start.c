@@ -101,6 +101,7 @@ int set_uid_mapping()
 	return 0;
 }
 
+// TODO: set_gid_mapping()
 
 /**
  * CONTRACT: _rootfs_ and _old_ start from the same drirectory
@@ -135,6 +136,7 @@ int mount_rootfs(char* rootfs, char* old)
 		return 1;
 	}
 
+	// this line removes ability to mount procfs
 	if (umount_old(rootfs, old)) {
 		perror("can't umount old");
 	}
@@ -167,7 +169,8 @@ int container_side_init(void* args)
 		perror("can't mount rootfs");
 		return 1;
 	}
-	
+
+	// it seems that at this line the process loses some capabilities
 	execv(cont_args->cmd[0], cont_args->cmd);
 
 	perror("can't do execv");
