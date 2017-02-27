@@ -213,11 +213,25 @@ int set_gid_mapping(int pid)
 	return 0;
 }
 
+
+int configure_cgroup(int pid, int cpu)
+{
+	char cmd[100];
+	sprintf(cmd, "./cgroup.sh %d %d", pid, cpu);
+	return system(cmd);
+}
+
+
 int host_side_init(int pid, int pipe_out, struct start_args* args)
 {
-	// TODO: configure cgroup
-	
 	int msg = -1;
+	
+	if (configure_cgroup(pid, args->cpu_perc)) {
+		perror("can't configure cgroups");
+		write(pipe_out, &msg, sizeof(msg));
+		return 1;
+	}
+
 	if (args->net) {
 		if (configure_netns(pid)) {
 			perror("can't configure network");
