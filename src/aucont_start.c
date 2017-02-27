@@ -129,7 +129,7 @@ int main(int argc, char** argv)
 int configure_environment(int pid, struct start_args* args)
 {
 	char cmd[100];
-	sprintf(cmd, "./config_env.py %d %s %s", pid, args->image_path, args->host_side_ip);
+	sprintf(cmd, "./env.py %d %s %s", pid, args->image_path, args->host_side_ip);
 	if (system(cmd)) {
 		perror("can't call system");
 		return 1;
@@ -153,7 +153,7 @@ int configure_netns(int pid)
 	fclose(netns_config);
 
 	char cmd[100];
-	sprintf(cmd, "./aucont_net.sh %d %s", pid, addrs);
+	sprintf(cmd, "./net.sh %d %s", pid, addrs);
 
 	if (system(cmd)) {
 		perror("can't configure netns");
@@ -175,7 +175,7 @@ int set_uid_mapping(int pid)
 		return 1;
 	}
 
-	char *mapping = "0 0 1";
+	char *mapping = "0 1000 40000";
 	int mapping_len = strlen(mapping);
 
 	if (mapping_len != write(fd, mapping, mapping_len)) {
@@ -200,7 +200,7 @@ int set_gid_mapping(int pid)
 		return 1;
 	}
 
-	char *mapping = "0 0 1";
+	char *mapping = "0 1000 40000";
 	int mapping_len = strlen(mapping);
 
 	if (mapping_len != write(fd, mapping, mapping_len)) {
@@ -239,7 +239,11 @@ int host_side_init(int pid, int pipe_out, struct start_args* args)
 			return 1;
 		}
 	}
-	
+	msg = pid;
+	write(pipe_out, &msg, sizeof(msg));
+
+	sleep(2);
+
 	if (set_uid_mapping(pid)) {
 		perror("can't configure uid mapping");
 		write(pipe_out, &msg, sizeof(msg));
@@ -261,78 +265,6 @@ int host_side_init(int pid, int pipe_out, struct start_args* args)
 	waitid(P_PID, pid, &infop, WEXITED);
 
 	return 0;
-}
-
-/*
-int set_uid_mapping()
-{
-	int fd = open("/proc/self/uid_map", O_WRONLY);
-	if (fd < 0) {
-		perror("can't open uid_map");
-		return 1;
-	}
-
-	char mapping[10];
-	sprintf(mapping, "%d 1000 1", geteuid());
-	fprintf(stderr, "euid: %d\n", geteuid());
-	int mapping_len = strlen(mapping);
-
-	if (mapping_len != write(fd, mapping, mapping_len)) {
-		close(fd);
-		perror("can't write uid_map");
-		return 1;
-	}
-
-	close(fd);
-	return 0;
-}
-
-int set_gid_mapping()
-{
-	int fd;
-
-	if ((fd = open("/proc/self/setgroups", O_WRONLY)) < 0) {
-		perror("can't open setgroups");
-		return 1;
-	}
-
-	char *deny = "deny";
-	int deny_len = strlen(deny);
-
-	if (deny_len != write(fd, deny, deny_len)) {
-		perror("can't write 'deny'");
-		return 1;
-	}
-
-	close(fd);
-
-
-	fd = open("/proc/self/gid_map", O_WRONLY);
-	if (fd < 0) {
-		perror("can't open gid_map");
-		return 1;
-	}
-
-	char *mapping = "0 1000 1";
-	int mapping_len = strlen(mapping);
-
-	if (mapping_len != write(fd, mapping, mapping_len)) {
-		close(fd);
-		perror("can't write gid_map");
-		return 1;
-	}
-
-	close(fd);
-	return 0;
-}
-*/
-
-
-int umount_old(char* rootfs, char* old)
-{
-	int root_len = strlen(rootfs);
-	// return umount2(old + root_len, 0); //MNT_DETACH);
-	return umount2(old + root_len, MNT_DETACH);
 }
 
 
@@ -364,8 +296,7 @@ int mount_rootfs(int pid)
 		return 1;
 	}
 
-	// this line removes ability to mount procfs
-	if (umount_old(rootfs, old)) {
+	if (umount2("/old", 0)) {
 		perror("can't umount old");
 	}
 
@@ -394,24 +325,26 @@ int container_side_init(void* args)
 		return 1;
 	}
 
-/*
-	if (mount("proc", "/proc", "proc", 0, NULL)) {
-		perror("can't mount proc");
-		return 1;
-	}
-
-	if (set_uid_mapping()) {
-		perror("can't set uid mapping");
-		return 1;
-	}
-
-	if (set_gid_mapping()) {
-		perror("can't set gid mapping");
-		return 1;
-	}
-*/
 	if (mount_rootfs(pid)) {
 		perror("can't mount rootfs");
+		return 1;
+	}
+
+	// TODO: should we do it here???
+
+	if (mount("sysfs", "/sys", "sysfs", 0, NULL)) {
+		perror("sys");
+		return 1;
+	}
+
+	if (mount("proc", "/proc", "proc", 0, NULL)) {
+		perror("proc");
+		return 1;
+	}
+
+
+	if ((pid = wait_host(cont_args->pipe_in)) < 0) {
+		perror("problems with host");
 		return 1;
 	}
 
