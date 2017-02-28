@@ -21,9 +21,9 @@ def main():
 	os.mkdir(root_path)
 	os.mkdir(os.path.join(root_path, OLD));
 
-	os.system("tar cf ./{}.tar {}".format(pid, image))
-	os.system("tar xf {0}.tar -C {0}".format(pid))
-	os.remove("{}.tar".format(pid))
+	os.system("tar cf ./{}.tar -C {} .".format(pid, image))
+	os.system("tar xf {}.tar -C {}".format(pid, root_path))
+	os.system("rm {}.tar".format(pid))
 
 	os.mkdir(os.path.join(pid_path, CGROUP))	
 	

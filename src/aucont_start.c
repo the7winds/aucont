@@ -89,11 +89,11 @@ int main(int argc, char** argv)
 
 	int flags = SIGCHLD 
 		| CLONE_NEWIPC
-        	| CLONE_NEWNS
-        	| CLONE_NEWPID
-        	| CLONE_NEWUTS
+		| CLONE_NEWNS
+		| CLONE_NEWPID
+		| CLONE_NEWUTS
 		| CLONE_NEWUSER
-        	| CLONE_NEWNET;
+		| CLONE_NEWNET;
 
 	void* stack_top = malloc(STACK_SIZE) + STACK_SIZE;
 	struct cont_args cont_args = {
@@ -175,7 +175,7 @@ int set_uid_mapping(int pid)
 		return 1;
 	}
 
-	char *mapping = "0 1000 40000";
+	char *mapping = "0 1000 1";
 	int mapping_len = strlen(mapping);
 
 	if (mapping_len != write(fd, mapping, mapping_len)) {
@@ -200,7 +200,7 @@ int set_gid_mapping(int pid)
 		return 1;
 	}
 
-	char *mapping = "0 1000 40000";
+	char *mapping = "0 1000 1";
 	int mapping_len = strlen(mapping);
 
 	if (mapping_len != write(fd, mapping, mapping_len)) {
@@ -239,10 +239,6 @@ int host_side_init(int pid, int pipe_out, struct start_args* args)
 			return 1;
 		}
 	}
-	msg = pid;
-	write(pipe_out, &msg, sizeof(msg));
-
-	sleep(2);
 
 	if (set_uid_mapping(pid)) {
 		perror("can't configure uid mapping");
@@ -303,6 +299,7 @@ int mount_rootfs(int pid)
 	return 0;
 }
 
+
 /**
  * on success returns PID, else -1
  */
@@ -342,14 +339,7 @@ int container_side_init(void* args)
 		return 1;
 	}
 
-
-	if ((pid = wait_host(cont_args->pipe_in)) < 0) {
-		perror("problems with host");
-		return 1;
-	}
-
-	// it seems that at this line the process loses some capabilities
-	execv(cont_args->cmd[0], cont_args->cmd);
+	execve(cont_args->cmd[0], cont_args->cmd, NULL);
 
 	perror("can't do execv");
 	return 1;
