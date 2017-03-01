@@ -2,9 +2,11 @@
 
 import os
 
+BASE = os.environ['AUCONT']
+
 def main(): 
-	containers = map(lambda d: d.name, filter(lambda d: d.is_dir(), os.scandir('.')))
-	processes = map(lambda d: d.name, filter(lambda d: d.is_dir(), os.scandir('/proc')))
+	containers = filter(os.path.isdir, os.listdir(BASE))
+	processes = filter(os.path.isdir, os.listdir('/proc'))
 	alive = set(containers) & set(processes)
 
 	for pid in alive:

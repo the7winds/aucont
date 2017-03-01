@@ -66,8 +66,15 @@ int configure_environment(int pid, struct start_args* args);
 
 int host_side_init(int pid, int pipe_out, struct start_args* args);
 
+
+#define BASE "$AUCONT"
+#define BASEV "AUCONT"
+char base_val[1024];
+
 int main(int argc, char** argv)
 {
+	strcpy(base_val, getenv(BASEV));
+
 	struct start_args args = {
 		.detatched = false,
 		.net = false,
@@ -114,7 +121,7 @@ int main(int argc, char** argv)
 		perror("can't configure environment");
 		return 1;
 	}
-	
+
 	close(pipefd[0]);
 
 	if (host_side_init(pid, pipefd[1], &args)) {
@@ -129,12 +136,12 @@ int main(int argc, char** argv)
 int configure_environment(int pid, struct start_args* args)
 {
 	char cmd[100];
-	sprintf(cmd, "./env.py %d %s %s", pid, args->image_path, args->host_side_ip);
+	sprintf(cmd, BASE "/env.py %d %s %s", pid, args->image_path, args->host_side_ip);
 	if (system(cmd)) {
 		perror("can't call system");
 		return 1;
 	}
-	
+
 	return 0;
 }
 
@@ -153,7 +160,7 @@ int configure_netns(int pid)
 	fclose(netns_config);
 
 	char cmd[100];
-	sprintf(cmd, "./net.sh %d %s", pid, addrs);
+	sprintf(cmd, BASE "/net.sh %d %s", pid, addrs);
 
 	if (system(cmd)) {
 		perror("can't configure netns");
@@ -217,7 +224,7 @@ int set_gid_mapping(int pid)
 int configure_cgroup(int pid, int cpu)
 {
 	char cmd[100];
-	sprintf(cmd, "./cgroup.sh %d %d", pid, cpu);
+	sprintf(cmd, BASE "/cgroup.sh %d %d", pid, cpu);
 	return system(cmd);
 }
 
@@ -225,7 +232,7 @@ int configure_cgroup(int pid, int cpu)
 int host_side_init(int pid, int pipe_out, struct start_args* args)
 {
 	int msg = -1;
-	
+
 	if (configure_cgroup(pid, args->cpu_perc)) {
 		perror("can't configure cgroups");
 		write(pipe_out, &msg, sizeof(msg));
@@ -266,18 +273,21 @@ int host_side_init(int pid, int pipe_out, struct start_args* args)
 
 int mount_rootfs(int pid)
 {
-	char rootfs[30];
-	sprintf(rootfs, "%d/rootfs", pid);
-	
-	char old[30];
-	sprintf(old, "%d/rootfs/old", pid);
+	char rootfs[100];
+	sprintf(rootfs, "%s/%d", base_val, pid);
 
-	if (mount(rootfs, rootfs, "bind", MS_BIND | MS_REC, NULL)) {
-		perror("can't mount");
+	char old[100];
+	sprintf(old, "%s/%d/old", base_val, pid);
+
+	if (mount(rootfs, rootfs, "bind", MS_BIND, NULL)) {
+		fprintf(stderr, "%s\n", rootfs);
+		perror("can't bind mount");
 		return 1;
 	}
 
 	if (syscall(SYS_pivot_root, rootfs, old)) {
+		fprintf(stderr, "%s\n", rootfs);
+		fprintf(stderr, "%s\n", old);
 		perror("can't do pivot_root");
 		return 1;
 	}
@@ -292,8 +302,24 @@ int mount_rootfs(int pid)
 		return 1;
 	}
 
-	if (umount2("/old", 0)) {
+	// TODO: should we do it here???
+
+	if (mount("sysfs", "/sys", "sysfs", 0, NULL)) {
+		perror("sys");
+		return 1;
+	}
+
+	if (mount("proc", "/proc", "proc", 0, NULL)) {
+		perror("proc");
+		return 1;
+	}
+
+	if (umount2("/old", MNT_DETACH)) {
 		perror("can't umount old");
+	}
+
+	if (rmdir("/old")) {
+		perror("can't rmdir /old");
 	}
 
 	return 0;
@@ -312,10 +338,12 @@ int wait_host(int pipe_in)
 }
 
 
+#define HOSTNAME "container"
+
 int container_side_init(void* args)
 {
 	struct cont_args* cont_args = args;
-	
+
 	int pid;
 	if ((pid = wait_host(cont_args->pipe_in)) < 0) {
 		perror("problems with host");
@@ -327,16 +355,17 @@ int container_side_init(void* args)
 		return 1;
 	}
 
-	// TODO: should we do it here???
+	// sets hostname
 
-	if (mount("sysfs", "/sys", "sysfs", 0, NULL)) {
-		perror("sys");
-		return 1;
-	}
+	sethostname(HOSTNAME, strlen(HOSTNAME));
 
-	if (mount("proc", "/proc", "proc", 0, NULL)) {
-		perror("proc");
-		return 1;
+	// sets UID and GID
+
+	setuid(0);
+	setgid(0);
+
+	if (cont_args->detatched) {
+		daemon(0, 0);
 	}
 
 	execve(cont_args->cmd[0], cont_args->cmd, NULL);
