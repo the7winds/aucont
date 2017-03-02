@@ -264,8 +264,10 @@ int host_side_init(int pid, int pipe_out, struct start_args* args)
 
 	printf("%d\n", pid);
 
-	siginfo_t infop;
-	waitid(P_PID, pid, &infop, WEXITED);
+	if (!args->detatched) {
+		siginfo_t infop;
+		waitid(P_PID, pid, &infop, WEXITED);
+	}
 
 	return 0;
 }
@@ -340,6 +342,16 @@ int wait_host(int pipe_in)
 
 #define HOSTNAME "container"
 
+int daemonize()
+{
+	close(0);
+	close(1);
+	close(2);
+	int i = open("/dev/zero", 'r');
+	int o = open("/dev/null", 'w');
+	int e = open("/dev/null", 'w');
+}
+
 int container_side_init(void* args)
 {
 	struct cont_args* cont_args = args;
@@ -365,7 +377,7 @@ int container_side_init(void* args)
 	setgid(0);
 
 	if (cont_args->detatched) {
-		daemon(0, 0);
+		daemonize();
 	}
 
 	execve(cont_args->cmd[0], cont_args->cmd, NULL);
