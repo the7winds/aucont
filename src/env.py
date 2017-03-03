@@ -6,7 +6,7 @@ import ipaddress as ip
 import tarfile as tar
 
 OLD = 'old'
-BASE = os.environ['AUCONT']
+BASE = os.path.dirname(os.path.realpath(__file__))
 
 def main():
 	pid = sys.argv[1]
@@ -16,15 +16,15 @@ def main():
 	os.mkdir(pid_path)
 	os.mkdir(os.path.join(pid_path, OLD));
 
-	os.system("tar cf ./{}.tar -C {} .".format(pid, image))
-	os.system("tar xf {}.tar -C {}".format(pid, pid_path))
-	os.system("rm {}.tar".format(pid))
+	os.system("sudo tar cf ./{}.tar -C {} .".format(pid, image))
+	os.system("sudo tar xf {}.tar -C {}".format(pid, pid_path))
+	os.system("sudo rm {}.tar".format(pid))
 	
 	if (sys.argv[3] != 'null'):
-		host_side_ip = ip.ip_address(sys.argv[3]);
-		container_ip = host_side_ip + 1;
+		container_ip = ip.ip_address(sys.argv[3]);
+		host_ip = container_ip + 1;
 		with open(os.path.join(pid_path, 'net_config'), 'w') as net_config:
-			net_config.write("{}/24 {}/24".format(host_side_ip, container_ip))
+			net_config.write("{}/24 {}/24".format(host_ip, container_ip))
 
 
 

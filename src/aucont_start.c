@@ -13,24 +13,26 @@
 #include <sys/wait.h>
 #include <stdbool.h>
 
-int container_side_init(void* args);
+#include "aucont_util.h"
 
 #define STACK_SIZE (1 << 20)
 
 struct start_args {
 	bool detatched;
 	bool net;
-	char* host_side_ip;
+	char* cont_ip;
 	int cpu_perc;
-	char* image_path;
+	char image_path[1024];
 	char** cmd;
 };
+
 
 struct cont_args {
 	int pipe_in;
 	bool detatched;
 	char** cmd;
 };
+
 
 int parse_args(char** argv, struct start_args* args)
 {
@@ -44,7 +46,7 @@ int parse_args(char** argv, struct start_args* args)
 			i += 2;
 		} else if (strcmp(argv[i], "--net") == 0) {
 			args->net = true;
-			args->host_side_ip = argv[i + 1];
+			args->cont_ip = argv[i + 1];
 			i += 2;
 		} else {
 			break;
@@ -52,7 +54,9 @@ int parse_args(char** argv, struct start_args* args)
 	}
 
 	if (argv[i] != NULL && argv[i + 1] != NULL) {
-		args->image_path = argv[i];
+		if (realpath(argv[i], args->image_path) == NULL) {
+			return 1;
+		}
 		args->cmd = argv + i + 1;
 		return 0;
 	}
@@ -66,24 +70,24 @@ int configure_environment(int pid, struct start_args* args);
 
 int host_side_init(int pid, int pipe_out, struct start_args* args);
 
-
-#define BASE "$AUCONT"
-#define BASEV "AUCONT"
-char base_val[1024];
+int container_side_init(void* args);
 
 int main(int argc, char** argv)
 {
-	strcpy(base_val, getenv(BASEV));
-
 	struct start_args args = {
 		.detatched = false,
 		.net = false,
-		.host_side_ip = "null",
+		.cont_ip = "null",
 		.cpu_perc = 100
 	};
 
 	if (parse_args(argv, &args)) {
 		fprintf(stderr, USAGE);
+		return 1;
+	}
+
+	if (set_work_directory()) {
+		perror("can't set work directory");
 		return 1;
 	}
 
@@ -103,6 +107,7 @@ int main(int argc, char** argv)
 		| CLONE_NEWNET;
 
 	void* stack_top = malloc(STACK_SIZE) + STACK_SIZE;
+
 	struct cont_args cont_args = {
 		.pipe_in = pipefd[0],
 		.detatched = args.detatched,
@@ -135,8 +140,8 @@ int main(int argc, char** argv)
 
 int configure_environment(int pid, struct start_args* args)
 {
-	char cmd[100];
-	sprintf(cmd, BASE "/env.py %d %s %s", pid, args->image_path, args->host_side_ip);
+	char cmd[CMD_LEN];
+	sprintf(cmd, "./env.py %d %s %s", pid, args->image_path, args->cont_ip);
 	if (system(cmd)) {
 		perror("can't call system");
 		return 1;
@@ -145,89 +150,15 @@ int configure_environment(int pid, struct start_args* args)
 	return 0;
 }
 
+/**
+ * HOST-SIDE INITIALIZATION
+ */
 
-#define MAX_IP_LEN 19
+int configure_cgroup(int pid, int cpu);
 
-int configure_netns(int pid)
-{
-	int addrs_len = 2 * MAX_IP_LEN + 1;
-	char addrs[addrs_len];
+int configure_netns(int pid);
 
-	FILE* netns_config = fopen("net_config", "r");
-
-	fgets(addrs, addrs_len, netns_config);
-
-	fclose(netns_config);
-
-	char cmd[100];
-	sprintf(cmd, BASE "/net.sh %d %s", pid, addrs);
-
-	if (system(cmd)) {
-		perror("can't configure netns");
-		return 1;
-	}
-
-	return 0;
-}
-
-
-int set_uid_mapping(int pid)
-{
-	char path[50];
-	sprintf(path, "/proc/%d/uid_map", pid);
-
-	int fd = open(path, O_WRONLY);
-	if (fd < 0) {
-		perror("can't open uid_map");
-		return 1;
-	}
-
-	char *mapping = "0 1000 1";
-	int mapping_len = strlen(mapping);
-
-	if (mapping_len != write(fd, mapping, mapping_len)) {
-		close(fd);
-		perror("can't write uid_map");
-		return 1;
-	}
-
-	close(fd);
-	return 0;
-}
-
-
-int set_gid_mapping(int pid)
-{
-	char path[50];
-	sprintf(path, "/proc/%d/gid_map", pid);
-
-	int fd = open(path, O_WRONLY);
-	if (fd < 0) {
-		perror("can't open gid_map");
-		return 1;
-	}
-
-	char *mapping = "0 1000 1";
-	int mapping_len = strlen(mapping);
-
-	if (mapping_len != write(fd, mapping, mapping_len)) {
-		close(fd);
-		perror("can't write gid_map");
-		return 1;
-	}
-
-	close(fd);
-	return 0;
-}
-
-
-int configure_cgroup(int pid, int cpu)
-{
-	char cmd[100];
-	sprintf(cmd, BASE "/cgroup.sh %d %d", pid, cpu);
-	return system(cmd);
-}
-
+int set_id_mapping(char* map_name, int pid, int id);
 
 int host_side_init(int pid, int pipe_out, struct start_args* args)
 {
@@ -247,13 +178,13 @@ int host_side_init(int pid, int pipe_out, struct start_args* args)
 		}
 	}
 
-	if (set_uid_mapping(pid)) {
+	if (set_id_mapping("uid_map", pid, getuid())) {
 		perror("can't configure uid mapping");
 		write(pipe_out, &msg, sizeof(msg));
 		return 1;
 	}
 
-	if (set_gid_mapping(pid)) {
+	if (set_id_mapping("gid_map", pid, getgid())) {
 		perror("can't configure gid mapping");
 		write(pipe_out, &msg, sizeof(msg));
 		return 1;
@@ -273,13 +204,118 @@ int host_side_init(int pid, int pipe_out, struct start_args* args)
 }
 
 
+int configure_cgroup(int pid, int cpu)
+{
+	char cmd[CMD_LEN];
+	sprintf(cmd, "./cgroup.sh %d %d", pid, cpu);
+	return system(cmd);
+}
+
+
+#define MAX_IP_LEN 19
+
+int configure_netns(int pid)
+{
+	int addrs_len = 2 * MAX_IP_LEN + 1;
+	char addrs[addrs_len];
+
+	char path[PATH_LEN];
+	sprintf(path, "./%d/net_config", pid);
+
+	FILE* netns_config = fopen(path, "r");
+
+	fgets(addrs, addrs_len, netns_config);
+
+	fclose(netns_config);
+
+	char cmd[CMD_LEN];
+	sprintf(cmd, "./net.sh %d %s", pid, addrs);
+
+	if (system(cmd)) {
+		perror("can't configure netns");
+		return 1;
+	}
+
+	return 0;
+}
+
+
+#define MAP_LEN 10
+
+int set_id_mapping(char* map_name, int pid, int id)
+{
+	char path[PATH_LEN];
+	sprintf(path, "/proc/%d/%s", pid, map_name);
+
+	int fd = open(path, O_WRONLY);
+	if (fd < 0) {
+		perror("can't open map file");
+		return 1;
+	}
+
+	char mapping[MAP_LEN];
+	int mapping_len = sprintf(mapping, "0 %d 1", id);
+
+	if (mapping_len != write(fd, mapping, mapping_len)) {
+		perror("can't write mapping");
+		return 1;
+	}
+
+	close(fd);
+	return 0;	
+}
+
+
+/*
+ * CONTAINER-SIDE INITIALIZATION
+ */
+
+#define HOSTNAME "container"
+
+int mount_rootfs(int pid);
+
+int daemonize();
+
+int container_side_init(void* args)
+{
+	struct cont_args* cont_args = args;
+
+	int pid;
+	if ((pid = wait_parent(cont_args->pipe_in)) < 0) {
+		perror("problems with host");
+		return 1;
+	}
+
+	if (mount_rootfs(pid)) {
+		perror("can't mount rootfs");
+		return 1;
+	}
+
+	sethostname(HOSTNAME, strlen(HOSTNAME));
+
+	setuid(0);
+	setgid(0);
+
+	if (cont_args->detatched) {
+		if (daemonize()) {
+			perror("daemonization failed");
+			return 1;
+		}
+	}
+
+	execve(cont_args->cmd[0], cont_args->cmd, NULL);
+
+	perror("can't do execv");
+	return 1;
+}
+
 int mount_rootfs(int pid)
 {
-	char rootfs[100];
-	sprintf(rootfs, "%s/%d", base_val, pid);
+	char rootfs[PATH_LEN];
+	sprintf(rootfs, "./%d", pid);
 
-	char old[100];
-	sprintf(old, "%s/%d/old", base_val, pid);
+	char old[PATH_LEN];
+	sprintf(old, "./%d/old", pid);
 
 	if (mount(rootfs, rootfs, "bind", MS_BIND, NULL)) {
 		fprintf(stderr, "%s\n", rootfs);
@@ -319,26 +355,13 @@ int mount_rootfs(int pid)
 	if (umount2("/old", MNT_DETACH)) {
 		perror("can't umount old");
 	}
-
+/*
 	if (rmdir("/old")) {
 		perror("can't rmdir /old");
 	}
-
+*/
 	return 0;
 }
-
-
-/**
- * on success returns PID, else -1
- */
-
-int wait_host(int pipe_in)
-{
-	int msg;
-	read(pipe_in, &msg, sizeof(msg));
-	return msg;
-}
-
 
 #define HOSTNAME "container"
 
@@ -347,42 +370,37 @@ int daemonize()
 	close(0);
 	close(1);
 	close(2);
-	int i = open("/dev/zero", 'r');
-	int o = open("/dev/null", 'w');
-	int e = open("/dev/null", 'w');
-}
-
-int container_side_init(void* args)
-{
-	struct cont_args* cont_args = args;
-
-	int pid;
-	if ((pid = wait_host(cont_args->pipe_in)) < 0) {
-		perror("problems with host");
+	
+	int tmpfd;
+	if ((tmpfd = open("/dev/zero", 'r')) < 0) {
+		perror("can't open /dev/zero");
 		return 1;
 	}
 
-	if (mount_rootfs(pid)) {
-		perror("can't mount rootfs");
+	if (dup2(tmpfd, 0) != 0) {
+		perror("can't steer stdin to /dev/zero");
 		return 1;
 	}
 
-	// sets hostname
-
-	sethostname(HOSTNAME, strlen(HOSTNAME));
-
-	// sets UID and GID
-
-	setuid(0);
-	setgid(0);
-
-	if (cont_args->detatched) {
-		daemonize();
+	if ((tmpfd = open("/dev/null", 'r')) < 0) {
+		perror("can't open /dev/zero");
+		return 1;
 	}
 
-	execve(cont_args->cmd[0], cont_args->cmd, NULL);
+	if (dup2(tmpfd, 1) != 1) {
+		perror("can't steer stdout to /dev/null");
+		return 1;
+	}
 
-	perror("can't do execv");
-	return 1;
+	if ((tmpfd = open("/dev/null", 'r')) < 0) {
+		perror("can't open /dev/zero");
+		return 1;
+	}
+
+	if (dup2(tmpfd, 2) != 2) {
+		perror("can't steer stder to /dev/null");
+		return 1;
+	}
+
+	return 0;
 }
-

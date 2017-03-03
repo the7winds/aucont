@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <errno.h>
 #include <signal.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -7,9 +8,16 @@
 #include <sys/ptrace.h>
 #include <sys/wait.h>
 
+#include "aucont_util.h"
+
 
 int main(int argc, char** argv)
 {
+	if (set_work_directory()) {
+		perror("can't set work directory");
+		return 1;
+	}
+
 	int sig = SIGTERM;
 	pid_t pid = (pid_t) atoi(argv[1]);
 
@@ -18,6 +26,10 @@ int main(int argc, char** argv)
 	}
 
 	if (ptrace(PTRACE_SEIZE, pid, 0, PTRACE_O_TRACEEXIT)) {
+		if (errno == ESRCH) {
+			return 0;
+		}
+
 		perror("can't ptrace");
 		return 1;
 	}

@@ -12,14 +12,15 @@ IP_HOST=$2
 IP_CONT=$3
 NETNS=/proc/"$PID"/ns/net
 
-ip link add $HOST type veth peer name $CONT && 
+sudo ip link add $HOST type veth peer name $CONT && 
 
 # configures container's veth
-ip link set $CONT netns $PID &&
-nsenter -t $PID -n ip link set $CONT up &&
-nsenter -t $PID -n ip address add $IP_CONT dev $CONT &&
+sudo ip link set $CONT netns $PID &&
+sudo nsenter -t $PID -n ip link set $CONT up &&
+sudo nsenter -t $PID -n ip address add $IP_CONT dev $CONT &&
+sudo nsenter -t $PID -n ip link set lo up &&
 
 # configures host's veth
-ip link set $HOST up &&
-ip address add $IP_HOST dev $HOST
+sudo ip link set $HOST up &&
+sudo ip address add $IP_HOST dev $HOST
 

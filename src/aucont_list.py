@@ -2,7 +2,7 @@
 
 import os
 
-BASE = os.environ['AUCONT']
+BASE = os.path.dirname(os.path.realpath(__file__))
 
 def main(): 
 	containers = filter(lambda d: os.path.isdir(os.path.join(BASE, d)), os.listdir(BASE))

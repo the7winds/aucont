@@ -1,15 +1,14 @@
 #!/bin/bash
 
-PID=$1
-CG=cgrouph
-PERIOD=1000000
-CPU=`echo /sys/bus/cpu/devices/* | wc -w`
-PC=$2
-let "QUOTA = $PERIOD * $CPU * $PC / 100"
+pid=$1
+perc=$2
+cores=`nproc`
+period=1000000
+let 'quota=period*cores*perc/100'
 
-CGDIR='/sys/fs/cgroup/cpu/'$PID
+cgdir=/sys/fs/cgroup/cpu/$pid
 
-mkdir $CGDIR &&
-echo $PID > $CGDIR/tasks &&
-echo $PERIOD > $CGDIR/cpu.cfs_period_us &&
-echo $QUOTA > $CGDIR/cpu.cfs_quota_us
+sudo mkdir $cgdir > /dev/null
+echo $pid | sudo tee $cgdir/tasks > /dev/null
+echo $period | sudo tee $cgdir/cpu.cfs_period_us > /dev/null
+echo $quota | sudo tee $cgdir/cpu.cfs_quota_us > /dev/null

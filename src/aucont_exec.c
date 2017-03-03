@@ -9,21 +9,25 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 
+#include "aucont_util.h"
 
-int enterns(int pid, char* ns, int ns_flag)
+int join_to_cgroup(int ppid, int pid)
 {
-	char nspath[100];
-	sprintf(nspath, "/proc/%d/ns/%s", pid, ns);
+	char cgpath[100];
+	sprintf(cgpath, "/sys/fs/cgroup/cpu/%d/tasks", ppid);
 
-	int fd = open(nspath, 0);
+	int fd = open(cgpath, O_WRONLY | O_APPEND);
 	
 	if (fd < 0) {
-		perror("can't open ns");
+		perror("can't open cpu tasks");
 		return 1;
 	}
 
-	if (setns(fd, ns_flag)) {
-		perror("can't set ns");
+	char spid[10];
+	int spid_len = sprintf(spid, "%d", pid);
+
+	if (spid_len != write(fd, spid, spid_len)) {
+		perror("can't write pid");
 		close(fd);
 		return 1;
 	}
@@ -38,9 +42,15 @@ int main(int argc, char** argv)
 {
 	int ppid = atoi(argv[1]);
 	char** cmd = argv + 2;
-	
+
 	if (enterns(ppid, "pid", CLONE_NEWPID)) {
 		perror("can't enter in userns");
+		return 1;
+	}
+
+	int pipefd[2];
+	if (pipe2(pipefd, O_CLOEXEC)) {
+		perror("can't get pipe");
 		return 1;
 	}
 
@@ -52,9 +62,24 @@ int main(int argc, char** argv)
 	}
 
 	if (pid) {
+		if (join_to_cgroup(ppid, pid)) {
+			perror("can't join to cgroup");
+			return 1;
+		}
+
+		if (sizeof(pid) != write(pipefd[1], &pid, sizeof(pid))) {
+			perror("can't send ok");
+			return 1;
+		}
+
 		siginfo_t infop;
 		waitid(P_PID, pid, &infop, WEXITED);
 	} else {
+		if (wait_parent(pipefd[0]) < 0) {
+			perror("can't read msg");
+			return 1;
+		}
+
 		if (enterns(ppid, "ipc", CLONE_NEWIPC)) {
 			perror("can't enter in ipcns");
 			return 1;
