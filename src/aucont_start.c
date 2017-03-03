@@ -68,7 +68,7 @@ int parse_args(char** argv, struct start_args* args)
 
 int configure_environment(int pid, struct start_args* args);
 
-int host_side_init(int pid, int pipe_out, struct start_args* args);
+int host_side_init(int uid, int gid, int pid, int pipe_out, struct start_args* args);
 
 int container_side_init(void* args);
 
@@ -121,6 +121,14 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
+	int gid = getgid();
+	int uid = getuid();
+
+	/*
+	 * I want to run scripts without 'sudo'
+	 * so I change my uid
+	 */
+	setuid(0);
 
 	if (configure_environment(pid, &args)) {
 		perror("can't configure environment");
@@ -129,7 +137,7 @@ int main(int argc, char** argv)
 
 	close(pipefd[0]);
 
-	if (host_side_init(pid, pipefd[1], &args)) {
+	if (host_side_init(uid, gid, pid, pipefd[1], &args)) {
 		perror("host side init goes wrong");
 		return 1;
 	}
@@ -160,7 +168,7 @@ int configure_netns(int pid);
 
 int set_id_mapping(char* map_name, int pid, int id);
 
-int host_side_init(int pid, int pipe_out, struct start_args* args)
+int host_side_init(int uid, int gid, int pid, int pipe_out, struct start_args* args)
 {
 	int msg = -1;
 
@@ -178,13 +186,13 @@ int host_side_init(int pid, int pipe_out, struct start_args* args)
 		}
 	}
 
-	if (set_id_mapping("uid_map", pid, getuid())) {
+	if (set_id_mapping("uid_map", pid, uid)) {
 		perror("can't configure uid mapping");
 		write(pipe_out, &msg, sizeof(msg));
 		return 1;
 	}
 
-	if (set_id_mapping("gid_map", pid, getgid())) {
+	if (set_id_mapping("gid_map", pid, gid)) {
 		perror("can't configure gid mapping");
 		write(pipe_out, &msg, sizeof(msg));
 		return 1;
@@ -262,7 +270,7 @@ int set_id_mapping(char* map_name, int pid, int id)
 	}
 
 	close(fd);
-	return 0;	
+	return 0;
 }
 
 
@@ -354,12 +362,14 @@ int mount_rootfs(int pid)
 
 	if (umount2("/old", MNT_DETACH)) {
 		perror("can't umount old");
+		return 1;
 	}
-/*
+
 	if (rmdir("/old")) {
 		perror("can't rmdir /old");
+		return 1;
 	}
-*/
+
 	return 0;
 }
 
@@ -370,7 +380,7 @@ int daemonize()
 	close(0);
 	close(1);
 	close(2);
-	
+
 	int tmpfd;
 	if ((tmpfd = open("/dev/zero", 'r')) < 0) {
 		perror("can't open /dev/zero");

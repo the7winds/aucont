@@ -16,9 +16,9 @@ def main():
 	os.mkdir(pid_path)
 	os.mkdir(os.path.join(pid_path, OLD));
 
-	os.system("sudo tar cf ./{}.tar -C {} .".format(pid, image))
-	os.system("sudo tar xf {}.tar -C {}".format(pid, pid_path))
-	os.system("sudo rm {}.tar".format(pid))
+	os.system("tar cf ./{}.tar -C {} .".format(pid, image))
+	os.system("tar xf {}.tar -C {}".format(pid, pid_path))
+	os.system("rm {}.tar".format(pid))
 	
 	if (sys.argv[3] != 'null'):
 		container_ip = ip.ip_address(sys.argv[3]);
