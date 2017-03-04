@@ -13,7 +13,7 @@
 
 int join_to_cgroup(int ppid, int pid)
 {
-	char cgpath[100];
+	char cgpath[PATH_LEN];
 	sprintf(cgpath, "/sys/fs/cgroup/cpu/%d/tasks", ppid);
 
 	int fd = open(cgpath, O_WRONLY | O_APPEND);

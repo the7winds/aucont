@@ -52,7 +52,7 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
-	char path[50];
+	char path[PATH_LEN];
 	sprintf(path, "/proc/%d", pid);
 
 	int pd;
