@@ -27,7 +27,7 @@ int main(int argc, char** argv)
 
 	if (ptrace(PTRACE_SEIZE, pid, 0, PTRACE_O_TRACEEXIT)) {
 		if (errno == ESRCH) {
-			return 0;
+			goto end;
 		}
 
 		perror("can't ptrace");
@@ -60,5 +60,8 @@ int main(int argc, char** argv)
 		close(pd);
 	}
 
-	return 0;
+	char cmd[CMD_LEN];
+end:
+	sprintf(cmd, "rm -rf ./%d", pid);
+	return system(cmd);
 }
