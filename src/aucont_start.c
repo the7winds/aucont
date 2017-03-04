@@ -98,7 +98,7 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
-	int flags = SIGCHLD 
+	int flags = SIGCHLD
 		| CLONE_NEWIPC
 		| CLONE_NEWNS
 		| CLONE_NEWPID
@@ -116,7 +116,7 @@ int main(int argc, char** argv)
 
 	int pid = clone(container_side_init, stack_top, flags, &cont_args);
 
-	if (pid < 0) { 
+	if (pid < 0) {
 		perror("can't clone");
 		return 1;
 	}
@@ -266,6 +266,7 @@ int set_id_mapping(char* map_name, int pid, int id)
 
 	if (mapping_len != write(fd, mapping, mapping_len)) {
 		perror("can't write mapping");
+		close (fd);
 		return 1;
 	}
 
@@ -348,8 +349,6 @@ int mount_rootfs(int pid)
 		return 1;
 	}
 
-	// TODO: should we do it here???
-
 	if (mount("sysfs", "/sys", "sysfs", 0, NULL)) {
 		perror("sys");
 		return 1;
@@ -377,9 +376,22 @@ int mount_rootfs(int pid)
 
 int daemonize()
 {
-	close(0);
-	close(1);
-	close(2);
+	if (setsid() < 0) {
+		perror("can't start new session");
+		return 1;
+	}
+
+	if (chdir("/")) {
+		perror("can't chdir '/'");
+		return 1;
+	}
+
+	umask(660);
+
+	close(STDIN_FILENO);
+	close(STDOUT_FILENO);
+	close(STDERR_FILENO);
+
 
 	int tmpfd;
 	if ((tmpfd = open("/dev/zero", 'r')) < 0) {
@@ -387,28 +399,28 @@ int daemonize()
 		return 1;
 	}
 
-	if (dup2(tmpfd, 0) != 0) {
-		perror("can't steer stdin to /dev/zero");
+	if (dup2(tmpfd, STDIN_FILENO) != STDIN_FILENO) {
+		perror("can't steer /dev/zero to STDIN_FILENO");
 		return 1;
 	}
 
 	if ((tmpfd = open("/dev/null", 'r')) < 0) {
-		perror("can't open /dev/zero");
+		perror("can't open /dev/null");
 		return 1;
 	}
 
-	if (dup2(tmpfd, 1) != 1) {
-		perror("can't steer stdout to /dev/null");
+	if (dup2(tmpfd, STDOUT_FILENO) != STDOUT_FILENO) {
+		perror("can't steer /dev/null to stdout");
 		return 1;
 	}
 
 	if ((tmpfd = open("/dev/null", 'r')) < 0) {
-		perror("can't open /dev/zero");
+		perror("can't open /dev/null");
 		return 1;
 	}
 
-	if (dup2(tmpfd, 2) != 2) {
-		perror("can't steer stder to /dev/null");
+	if (dup2(tmpfd, STDERR_FILENO) != STDERR_FILENO) {
+		perror("can't steer /dev/null to stderr");
 		return 1;
 	}
 
