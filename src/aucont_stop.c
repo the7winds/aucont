@@ -48,7 +48,7 @@ int main(int argc, char** argv)
 			return 1;
 		}
 	} else {
-		perror("wrong status");
+		perror("impossible status");
 		return 1;
 	}
 
