@@ -5,22 +5,22 @@
 # 2nd - host's ip
 # 3rd - container's ip
 
-PID=$1
-HOST=auveth"$PID"_1
-CONT=container
-IP_HOST=$2
-IP_CONT=$3
-NETNS=/proc/"$PID"/ns/net
+pid=$1
+host=auveth"$pid"_1
+cont=container
+ip_host=$2
+ip_cont=$3
+netns=/proc/"$pid"/ns/net
 
-ip link add $HOST type veth peer name $CONT &&
+ip link add $host type veth peer name $cont &&
 
 # configures container's veth
-ip link set $CONT netns $PID &&
-nsenter -t $PID -n ip link set $CONT up &&
-nsenter -t $PID -n ip address add $IP_CONT dev $CONT &&
-nsenter -t $PID -n ip link set lo up &&
+ip link set $cont netns $pid &&
+nsenter -t $pid -n ip link set $cont up &&
+nsenter -t $pid -n ip address add $ip_cont dev $cont &&
+nsenter -t $pid -n ip link set lo up &&
 
 # configures host's veth
-ip link set $HOST up &&
-ip address add $IP_HOST dev $HOST
+ip link set $host up &&
+ip address add $ip_host dev $host
 

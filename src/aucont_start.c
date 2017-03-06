@@ -126,8 +126,7 @@ int main(int argc, char** argv)
 	int uid = getuid();
 
 	/*
-	 * I want to run scripts without 'sudo'
-	 * so I change my uid
+	 * I want to run scripts without 'sudo' so I change my uid
 	 */
 	setuid(0);
 
@@ -159,7 +158,7 @@ int configure_environment(int pid, struct start_args* args)
 	return 0;
 }
 
-/**
+/*
  * HOST-SIDE INITIALIZATION
  */
 
@@ -319,6 +318,7 @@ int container_side_init(void* args)
 	return 1;
 }
 
+
 int mount_rootfs(int pid)
 {
 	char rootfs[PATH_LEN];
@@ -372,6 +372,7 @@ int mount_rootfs(int pid)
 
 	return 0;
 }
+
 
 #define HOSTNAME "container"
 
